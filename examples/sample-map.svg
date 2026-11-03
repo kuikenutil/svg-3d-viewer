@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150">
+  <g id="boundary" fill="#4e79a7">
+    <path d="M10,10 H190 V140 H10 Z M30,30 V120 H170 V30 Z" fill-rule="evenodd"/>
+  </g>
+  <g id="region" fill="#f28e2b">
+    <path d="M45,45 C70,30 120,35 150,60 C165,75 160,105 130,115 C95,127 55,115 45,90 C40,75 38,55 45,45 Z"/>
+  </g>
+  <g id="lake" fill="#76b7b2">
+    <path d="M85,70 C95,62 115,64 122,74 C128,83 120,96 106,98 C92,100 80,92 80,82 C80,77 81,73 85,70 Z"/>
+  </g>
+</svg>
