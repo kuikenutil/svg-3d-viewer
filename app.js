@@ -19,6 +19,8 @@ const viewport = document.getElementById('viewport');
 let svgText = null;
 let renderer, scene, camera, controls, mapGroup = null;
 const layerEntries = [];
+const engraveSet = new Set();
+const layerColors = new Map();
 
 init();
 
@@ -94,6 +96,25 @@ function onFile() {
 }
 
 function onRender() {
+  if (!svgText) return;
+  const wMm = parseFloat(widthInput.value);
+  const hMm = parseFloat(heightInput.value);
+  const tMm = parseFloat(thicknessInput.value);
+  if (!(wMm > 0) || !(hMm > 0) || !(tMm > 0)) {
+    setStatus('Width, height and thickness must be positive numbers.', true);
+    return;
+  }
+  engraveSet.clear();
+  layerColors.clear();
+  try {
+    buildMap(svgText, wMm, hMm, tMm);
+  } catch (err) {
+    console.error(err);
+    setStatus(`Render failed: ${err.message}`, true);
+  }
+}
+
+function rebuild() {
   if (!svgText) return;
   const wMm = parseFloat(widthInput.value);
   const hMm = parseFloat(heightInput.value);
@@ -190,17 +211,29 @@ function buildMap(text, wMm, hMm, tMm) {
       shapes.push(...SVGLoader.createShapes(path));
       if (!style) style = path.userData && path.userData.style;
     }
+    const engraved = engraveSet.has(i);
     if (shapes.length > 0) {
-      const geometry = new THREE.ExtrudeGeometry(shapes, {
-        depth: tMm,
-        bevelEnabled: false,
-        curveSegments: 24
-      });
-      geometry.scale(sx, sy, 1);
-      geometry.rotateX(Math.PI / 2);
-      geometry.translate(-(vb.minX + vb.w / 2) * sx, base + tMm, -(vb.minY + vb.h / 2) * sy);
+      let geometry;
+      let top = base;
+      if (engraved) {
+        geometry = new THREE.ShapeGeometry(shapes, 24);
+        geometry.scale(sx, sy, 1);
+        geometry.rotateX(Math.PI / 2);
+        geometry.translate(-(vb.minX + vb.w / 2) * sx, base + 0.02, -(vb.minY + vb.h / 2) * sy);
+      } else {
+        geometry = new THREE.ExtrudeGeometry(shapes, {
+          depth: tMm,
+          bevelEnabled: false,
+          curveSegments: 24
+        });
+        geometry.scale(sx, sy, 1);
+        geometry.rotateX(Math.PI / 2);
+        geometry.translate(-(vb.minX + vb.w / 2) * sx, base + tMm, -(vb.minY + vb.h / 2) * sy);
+        top = base + tMm;
+      }
 
-      const color = resolveColor(style, new THREE.Color(PALETTE[built % PALETTE.length]));
+      const stored = layerColors.get(i);
+      const color = stored ? new THREE.Color(stored) : resolveColor(style, new THREE.Color(PALETTE[built % PALETTE.length]));
       const material = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.55,
@@ -210,10 +243,10 @@ function buildMap(text, wMm, hMm, tMm) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mapGroup.add(mesh);
-      layerEntries.push({ name: layerName(el, i), material, base, top: base + tMm });
+      layerEntries.push({ name: layerName(el, i), material, base, top, engraved });
       built++;
     }
-    base += tMm;
+    if (!engraved) base += tMm;
   });
 
   if (built === 0) throw new Error('no geometry could be extracted from the SVG layers');
@@ -237,22 +270,33 @@ function fitCamera() {
 
 function populateLayerPanel(tMm) {
   layerList.innerHTML = '';
-  layerEntries.forEach((entry) => {
+  layerEntries.forEach((entry, i) => {
     const li = document.createElement('li');
     const picker = document.createElement('input');
     picker.type = 'color';
     picker.value = `#${entry.material.color.getHexString()}`;
-    picker.addEventListener('input', () => entry.material.color.set(picker.value));
+    picker.addEventListener('input', () => {
+      layerColors.set(i, picker.value);
+      entry.material.color.set(picker.value);
+    });
     const name = document.createElement('span');
     name.className = 'name';
     name.textContent = entry.name;
     name.title = entry.name;
     const height = document.createElement('span');
     height.className = 'height';
-    height.textContent = `${entry.base.toFixed(1)}–${entry.top.toFixed(1)} mm`;
-    li.append(picker, name, height);
+    height.textContent = entry.engraved ? 'flat (engraved)' : `${entry.base.toFixed(1)}–${entry.top.toFixed(1)} mm`;
+    const engrave = document.createElement('input');
+    engrave.type = 'checkbox';
+    engrave.checked = entry.engraved;
+    engrave.title = 'Engrave only: flat on top of the layer below, adds no thickness';
+    engrave.addEventListener('change', () => {
+      if (engrave.checked) engraveSet.add(i); else engraveSet.delete(i);
+      rebuild();
+    });
+    li.append(picker, name, engrave, height);
     layerList.appendChild(li);
   });
   layerPanel.querySelector('.hint').textContent =
-    `First in the list is the bottom layer. Layer thickness: ${tMm} mm. Drag to orbit, scroll to zoom.`;
+    `First in the list is the bottom layer. Layer thickness: ${tMm} mm. Tick the checkbox to engrave a layer flat. Drag to orbit, scroll to zoom.`;
 }
