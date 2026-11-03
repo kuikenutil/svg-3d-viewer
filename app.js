@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
 const PALETTE = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc948', '#b07aa1', '#ff9da7', '#9c755f', '#bab0ac'];
+const ENGRAVE_DEPTH = 0.1;
 const NON_LAYER_TAGS = new Set(['defs', 'style', 'title', 'desc', 'metadata', 'script']);
 
 const fileInput = document.getElementById('file');
@@ -216,10 +217,15 @@ function buildMap(text, wMm, hMm, tMm) {
       let geometry;
       let top = base;
       if (engraved) {
-        geometry = new THREE.ShapeGeometry(shapes, 24);
+        geometry = new THREE.ExtrudeGeometry(shapes, {
+          depth: ENGRAVE_DEPTH,
+          bevelEnabled: false,
+          curveSegments: 24
+        });
         geometry.scale(sx, sy, 1);
         geometry.rotateX(Math.PI / 2);
-        geometry.translate(-(vb.minX + vb.w / 2) * sx, base + 0.02, -(vb.minY + vb.h / 2) * sy);
+        geometry.translate(-(vb.minX + vb.w / 2) * sx, base + ENGRAVE_DEPTH, -(vb.minY + vb.h / 2) * sy);
+        top = base + ENGRAVE_DEPTH;
       } else {
         geometry = new THREE.ExtrudeGeometry(shapes, {
           depth: tMm,
@@ -285,11 +291,11 @@ function populateLayerPanel(tMm) {
     name.title = entry.name;
     const height = document.createElement('span');
     height.className = 'height';
-    height.textContent = entry.engraved ? 'flat (engraved)' : `${entry.base.toFixed(1)}–${entry.top.toFixed(1)} mm`;
+    height.textContent = entry.engraved ? `engraved (${ENGRAVE_DEPTH} mm)` : `${entry.base.toFixed(1)}–${entry.top.toFixed(1)} mm`;
     const engrave = document.createElement('input');
     engrave.type = 'checkbox';
     engrave.checked = entry.engraved;
-    engrave.title = 'Engrave only: flat on top of the layer below, adds no thickness';
+    engrave.title = `Engrave only: thin ${ENGRAVE_DEPTH} mm plate on the layer below, adds no stack height`;
     engrave.addEventListener('change', () => {
       if (engrave.checked) engraveSet.add(i); else engraveSet.delete(i);
       rebuild();
