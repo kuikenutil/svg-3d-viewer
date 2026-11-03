@@ -2,7 +2,15 @@
 
 Upload an SVG map and turn each top-level layer (`<g>` or shape element directly under `<svg>`) into a 3D slab. Slabs are stacked in document order (first layer at the bottom), scaled to the map size you enter, and extruded by the layer thickness you enter.
 
-## Run
+## Run with Docker (no local installs needed)
+
+```sh
+docker build -t svg-3d-viewer .
+docker run -p 8000:80 svg-3d-viewer
+# then open http://localhost:8000
+```
+
+## Run with a local server
 
 ES modules require a local server (opening `index.html` via `file://` will not work):
 
