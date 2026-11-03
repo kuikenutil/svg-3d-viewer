@@ -197,8 +197,8 @@ function buildMap(text, wMm, hMm, tMm) {
         curveSegments: 24
       });
       geometry.scale(sx, sy, 1);
-      geometry.rotateX(-Math.PI / 2);
-      geometry.translate(-(vb.minX + vb.w / 2) * sx, base, (vb.minY + vb.h / 2) * sy);
+      geometry.rotateX(Math.PI / 2);
+      geometry.translate(-(vb.minX + vb.w / 2) * sx, base + tMm, -(vb.minY + vb.h / 2) * sy);
 
       const color = resolveColor(style, new THREE.Color(PALETTE[built % PALETTE.length]));
       const material = new THREE.MeshStandardMaterial({
