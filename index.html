@@ -76,6 +76,13 @@
   }
   #layer-list .name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #layer-list .height { margin-left: auto; font-size: 11px; color: #7c8aa0; white-space: nowrap; }
+  #layer-list li.layer-row { cursor: grab; }
+  #layer-list li.drag-over { outline: 2px solid #3b82f6; }
+  #layer-list li.group { background: #1a2230; border: 1px dashed #3b82f6; }
+  #layer-list .group-header { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-weight: 600; cursor: grab; }
+  #layer-list .group-children { list-style: none; margin: 4px 0 4px 12px; padding: 2px 0 2px 8px; border-left: 2px solid #3b82f6; }
+  button.small { width: auto; padding: 4px 12px; margin: 0 0 8px; font-weight: 500; }
+  button.mini { width: auto; padding: 0 7px; margin: 0; margin-left: auto; background: #33415c; font-weight: 400; }
   #viewport { flex: 1; position: relative; }
   #viewport canvas { display: block; }
 </style>
@@ -114,6 +121,7 @@
     <p id="status"></p>
     <div id="layer-panel" hidden>
       <h2>Layers</h2>
+      <button id="add-group" type="button" class="small">+ Add group</button>
       <p class="hint">First in the list is the bottom layer. Drag to orbit, scroll to zoom.</p>
       <ul id="layer-list"></ul>
     </div>
