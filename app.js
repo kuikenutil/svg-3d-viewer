@@ -22,6 +22,8 @@ let renderer, scene, camera, controls, mapGroup = null;
 const layerEntries = [];
 const engraveSet = new Set();
 const layerColors = new Map();
+let stackItems = null;
+let nextGroupId = 1;
 
 init();
 
@@ -57,6 +59,11 @@ function init() {
   window.addEventListener('resize', onResize);
   fileInput.addEventListener('change', onFile);
   renderBtn.addEventListener('click', onRender);
+  document.getElementById('add-group').addEventListener('click', () => {
+    if (!stackItems) return;
+    stackItems.push({ type: 'group', id: nextGroupId++, children: [] });
+    renderStackPanel();
+  });
   animate();
 }
 
@@ -107,6 +114,7 @@ function onRender() {
   }
   engraveSet.clear();
   layerColors.clear();
+  stackItems = null;
   try {
     buildMap(svgText, wMm, hMm, tMm);
   } catch (err) {
@@ -187,6 +195,7 @@ function buildMap(text, wMm, hMm, tMm) {
 
   const layers = [...svg.children].filter(el => !NON_LAYER_TAGS.has(el.tagName.toLowerCase()));
   if (layers.length === 0) throw new Error('the SVG has no drawable layers');
+  if (!stackItems) stackItems = layers.map((_, i) => ({ type: 'layer', index: i }));
 
   if (mapGroup) {
     scene.remove(mapGroup);
@@ -203,7 +212,7 @@ function buildMap(text, wMm, hMm, tMm) {
   let base = 0;
   let built = 0;
 
-  layers.forEach((el, i) => {
+  const extractShapes = (el) => {
     const layerSvg = `<svg xmlns="http://www.w3.org/2000/svg">${styleTag}${el.outerHTML}</svg>`;
     const data = loader.parse(layerSvg);
     const shapes = [];
@@ -212,31 +221,26 @@ function buildMap(text, wMm, hMm, tMm) {
       shapes.push(...SVGLoader.createShapes(path));
       if (!style) style = path.userData && path.userData.style;
     }
-    const engraved = engraveSet.has(i);
-    if (shapes.length > 0) {
-      let geometry;
-      let top = base;
-      if (engraved) {
-        geometry = new THREE.ExtrudeGeometry(shapes, {
-          depth: ENGRAVE_DEPTH,
-          bevelEnabled: false,
-          curveSegments: 24
-        });
-        geometry.scale(sx, sy, 1);
-        geometry.rotateX(Math.PI / 2);
-        geometry.translate(-(vb.minX + vb.w / 2) * sx, base + ENGRAVE_DEPTH, -(vb.minY + vb.h / 2) * sy);
-        top = base + ENGRAVE_DEPTH;
-      } else {
-        geometry = new THREE.ExtrudeGeometry(shapes, {
-          depth: tMm,
-          bevelEnabled: false,
-          curveSegments: 24
-        });
-        geometry.scale(sx, sy, 1);
-        geometry.rotateX(Math.PI / 2);
-        geometry.translate(-(vb.minX + vb.w / 2) * sx, base + tMm, -(vb.minY + vb.h / 2) * sy);
-        top = base + tMm;
-      }
+    return { shapes, style };
+  };
+
+  for (const item of stackItems) {
+    const indices = item.type === 'group' ? item.children : [item.index];
+    if (indices.length === 0) continue;
+    const advance = !(item.type === 'layer' && engraveSet.has(item.index));
+    for (const i of indices) {
+      const { shapes, style } = extractShapes(layers[i]);
+      if (shapes.length === 0) continue;
+      const engraved = engraveSet.has(i);
+      const depth = engraved ? ENGRAVE_DEPTH : tMm;
+      const geometry = new THREE.ExtrudeGeometry(shapes, {
+        depth,
+        bevelEnabled: false,
+        curveSegments: 24
+      });
+      geometry.scale(sx, sy, 1);
+      geometry.rotateX(Math.PI / 2);
+      geometry.translate(-(vb.minX + vb.w / 2) * sx, base + depth, -(vb.minY + vb.h / 2) * sy);
 
       const stored = layerColors.get(i);
       const color = stored ? new THREE.Color(stored) : resolveColor(style, new THREE.Color(PALETTE[built % PALETTE.length]));
@@ -249,11 +253,11 @@ function buildMap(text, wMm, hMm, tMm) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mapGroup.add(mesh);
-      layerEntries.push({ name: layerName(el, i), material, base, top, engraved });
+      layerEntries.push({ name: layerName(layers[i], i), material, base, top: base + depth, engraved, index: i });
       built++;
     }
-    if (!engraved) base += tMm;
-  });
+    if (advance) base += tMm;
+  }
 
   if (built === 0) throw new Error('no geometry could be extracted from the SVG layers');
 
@@ -274,35 +278,146 @@ function fitCamera() {
   controls.update();
 }
 
-function populateLayerPanel(tMm) {
+function populateLayerPanel() {
+  renderStackPanel();
+}
+
+function locateLayer(index) {
+  for (const item of stackItems) {
+    if (item.type === 'layer' && item.index === index) return { item, pos: 0 };
+    if (item.type === 'group') {
+      const p = item.children.indexOf(index);
+      if (p !== -1) return { item, pos: p };
+    }
+  }
+  return null;
+}
+
+function removeLayer(index) {
+  const loc = locateLayer(index);
+  if (!loc) return;
+  if (loc.item.type === 'layer') stackItems.splice(stackItems.indexOf(loc.item), 1);
+  else loc.item.children.splice(loc.pos, 1);
+}
+
+function handleDrop(drag, target) {
+  if (drag.kind === 'layer') {
+    if (target.kind === 'layer' && drag.index === target.index) return;
+    removeLayer(drag.index);
+    if (target.kind === 'group') {
+      const g = stackItems.find(it => it.type === 'group' && it.id === target.id);
+      if (g) g.children.push(drag.index);
+    } else {
+      const loc = locateLayer(target.index);
+      if (!loc) return;
+      if (loc.item.type === 'group') loc.item.children.splice(loc.pos, 0, drag.index);
+      else stackItems.splice(stackItems.indexOf(loc.item), 0, { type: 'layer', index: drag.index });
+    }
+  } else {
+    const gi = stackItems.findIndex(it => it.type === 'group' && it.id === drag.id);
+    if (gi === -1) return;
+    const g = stackItems[gi];
+    stackItems.splice(gi, 1);
+    if (target.kind === 'group') {
+      const tp = stackItems.findIndex(it => it.type === 'group' && it.id === target.id);
+      stackItems.splice(tp === -1 ? stackItems.length : tp, 0, g);
+    } else {
+      const loc = locateLayer(target.index);
+      stackItems.splice(loc ? stackItems.indexOf(loc.item) : stackItems.length, 0, g);
+    }
+  }
+  renderStackPanel();
+  rebuild();
+}
+
+function makeDraggable(el, drag, target) {
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify(drag));
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  el.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    el.classList.add('drag-over');
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+  el.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove('drag-over');
+    try {
+      handleDrop(JSON.parse(e.dataTransfer.getData('text/plain')), target);
+    } catch { /* ignore malformed drags */ }
+  });
+}
+
+function layerRow(i) {
+  const entry = layerEntries.find(e => e.index === i);
+  const li = document.createElement('li');
+  li.className = 'layer-row';
+  const picker = document.createElement('input');
+  picker.type = 'color';
+  picker.value = `#${entry.material.color.getHexString()}`;
+  picker.addEventListener('input', () => {
+    layerColors.set(i, picker.value);
+    entry.material.color.set(picker.value);
+  });
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = entry.name;
+  name.title = entry.name;
+  const engrave = document.createElement('input');
+  engrave.type = 'checkbox';
+  engrave.checked = entry.engraved;
+  engrave.title = `Engrave only: thin ${ENGRAVE_DEPTH} mm plate on the layer below, adds no stack height`;
+  engrave.addEventListener('change', () => {
+    if (engrave.checked) engraveSet.add(i); else engraveSet.delete(i);
+    rebuild();
+  });
+  const height = document.createElement('span');
+  height.className = 'height';
+  height.textContent = entry.engraved ? `engraved (${ENGRAVE_DEPTH} mm)` : `${entry.base.toFixed(1)}–${entry.top.toFixed(1)} mm`;
+  li.append(picker, name, engrave, height);
+  makeDraggable(li, { kind: 'layer', index: i }, { kind: 'layer', index: i });
+  return li;
+}
+
+function groupItem(item) {
+  const li = document.createElement('li');
+  li.className = 'group';
+  const header = document.createElement('div');
+  header.className = 'group-header';
+  const label = document.createElement('span');
+  label.className = 'name';
+  label.textContent = `Group ${item.id} (${item.children.length})`;
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'mini';
+  del.textContent = '×';
+  del.title = 'Dissolve group: layers become top-level at this position';
+  del.addEventListener('click', () => {
+    const pos = stackItems.indexOf(item);
+    stackItems.splice(pos, 1, ...item.children.map(index => ({ type: 'layer', index })));
+    renderStackPanel();
+    rebuild();
+  });
+  header.append(label, del);
+  makeDraggable(header, { kind: 'group', id: item.id }, { kind: 'group', id: item.id });
+  const children = document.createElement('ul');
+  children.className = 'group-children';
+  item.children.forEach(ci => children.appendChild(layerRow(ci)));
+  makeDraggable(children, { kind: 'group', id: item.id }, { kind: 'group', id: item.id });
+  li.append(header, children);
+  return li;
+}
+
+function renderStackPanel() {
+  if (!stackItems) return;
   layerList.innerHTML = '';
-  layerEntries.forEach((entry, i) => {
-    const li = document.createElement('li');
-    const picker = document.createElement('input');
-    picker.type = 'color';
-    picker.value = `#${entry.material.color.getHexString()}`;
-    picker.addEventListener('input', () => {
-      layerColors.set(i, picker.value);
-      entry.material.color.set(picker.value);
-    });
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = entry.name;
-    name.title = entry.name;
-    const height = document.createElement('span');
-    height.className = 'height';
-    height.textContent = entry.engraved ? `engraved (${ENGRAVE_DEPTH} mm)` : `${entry.base.toFixed(1)}–${entry.top.toFixed(1)} mm`;
-    const engrave = document.createElement('input');
-    engrave.type = 'checkbox';
-    engrave.checked = entry.engraved;
-    engrave.title = `Engrave only: thin ${ENGRAVE_DEPTH} mm plate on the layer below, adds no stack height`;
-    engrave.addEventListener('change', () => {
-      if (engrave.checked) engraveSet.add(i); else engraveSet.delete(i);
-      rebuild();
-    });
-    li.append(picker, name, engrave, height);
-    layerList.appendChild(li);
+  stackItems.forEach(item => {
+    layerList.appendChild(item.type === 'group' ? groupItem(item) : layerRow(item.index));
   });
   layerPanel.querySelector('.hint').textContent =
-    `First in the list is the bottom layer. Layer thickness: ${tMm} mm. Tick the checkbox to engrave a layer flat. Drag to orbit, scroll to zoom.`;
+    'First in the list is the bottom layer. Drag rows to reorder; drag a layer onto a group to group it (layers in a group share one height level). Tick a checkbox to engrave. Drag in the 3D view to orbit.';
 }
