@@ -64,6 +64,13 @@ function init() {
     stackItems.push({ type: 'group', id: nextGroupId++, children: [] });
     renderStackPanel();
   });
+  layerList.addEventListener('dragover', (e) => e.preventDefault());
+  layerList.addEventListener('drop', (e) => {
+    e.preventDefault();
+    try {
+      handleDrop(JSON.parse(e.dataTransfer.getData('text/plain')), { kind: 'append' });
+    } catch { /* ignore malformed drags */ }
+  });
   animate();
 }
 
@@ -301,6 +308,21 @@ function removeLayer(index) {
 }
 
 function handleDrop(drag, target) {
+  if (target.kind === 'append') {
+    if (drag.kind === 'layer') {
+      removeLayer(drag.index);
+      stackItems.push({ type: 'layer', index: drag.index });
+    } else {
+      const gi = stackItems.findIndex(it => it.type === 'group' && it.id === drag.id);
+      if (gi === -1) return;
+      const g = stackItems[gi];
+      stackItems.splice(gi, 1);
+      stackItems.push(g);
+    }
+    renderStackPanel();
+    rebuild();
+    return;
+  }
   if (drag.kind === 'layer') {
     if (target.kind === 'layer' && drag.index === target.index) return;
     removeLayer(drag.index);
@@ -310,8 +332,8 @@ function handleDrop(drag, target) {
     } else {
       const loc = locateLayer(target.index);
       if (!loc) return;
-      if (loc.item.type === 'group') loc.item.children.splice(loc.pos, 0, drag.index);
-      else stackItems.splice(stackItems.indexOf(loc.item), 0, { type: 'layer', index: drag.index });
+      if (loc.item.type === 'group') loc.item.children.splice(loc.pos + (target.after ? 1 : 0), 0, drag.index);
+      else stackItems.splice(stackItems.indexOf(loc.item) + (target.after ? 1 : 0), 0, { type: 'layer', index: drag.index });
     }
   } else {
     const gi = stackItems.findIndex(it => it.type === 'group' && it.id === drag.id);
@@ -323,7 +345,7 @@ function handleDrop(drag, target) {
       stackItems.splice(tp === -1 ? stackItems.length : tp, 0, g);
     } else {
       const loc = locateLayer(target.index);
-      stackItems.splice(loc ? stackItems.indexOf(loc.item) : stackItems.length, 0, g);
+      stackItems.splice(loc ? stackItems.indexOf(loc.item) + (target.after ? 1 : 0) : stackItems.length, 0, g);
     }
   }
   renderStackPanel();
@@ -347,7 +369,10 @@ function makeDraggable(el, drag, target) {
     e.stopPropagation();
     el.classList.remove('drag-over');
     try {
-      handleDrop(JSON.parse(e.dataTransfer.getData('text/plain')), target);
+      const drag = JSON.parse(e.dataTransfer.getData('text/plain'));
+      let t = target;
+      if (t.kind === 'layer' && e.offsetY > el.offsetHeight / 2) t = { ...t, after: true };
+      handleDrop(drag, t);
     } catch { /* ignore malformed drags */ }
   });
 }
@@ -403,12 +428,12 @@ function groupItem(item) {
     rebuild();
   });
   header.append(label, del);
-  makeDraggable(header, { kind: 'group', id: item.id }, { kind: 'group', id: item.id });
   const children = document.createElement('ul');
   children.className = 'group-children';
   item.children.forEach(ci => children.appendChild(layerRow(ci)));
   makeDraggable(children, { kind: 'group', id: item.id }, { kind: 'group', id: item.id });
   li.append(header, children);
+  makeDraggable(li, { kind: 'group', id: item.id }, { kind: 'group', id: item.id });
   return li;
 }
 
