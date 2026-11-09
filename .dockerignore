@@ -1,6 +1,5 @@
 .git
 Dockerfile
 .dockerignore
-nginx.conf
 docker-compose.yml
 maps/
