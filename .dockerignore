@@ -1,6 +1,5 @@
 .git
 Dockerfile
 .dockerignore
-docker/
 docker-compose.yml
 maps/
