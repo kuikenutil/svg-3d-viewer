@@ -86,7 +86,7 @@ async function loadScene(name) {
   if (!name || name.includes('..')) return show404(name);
   document.body.classList.add('clean');
   onResize();
-  const base = `data/${encodeURIComponent(name)}`;
+  const base = `/data/${encodeURIComponent(name)}`;
   let svgResp, cfgResp;
   try {
     [svgResp, cfgResp] = await Promise.all([fetch(`${base}.svg`), fetch(`${base}.json`)]);
