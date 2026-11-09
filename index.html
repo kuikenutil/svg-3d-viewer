@@ -85,6 +85,22 @@
   button.mini { width: auto; padding: 0 7px; margin: 0; margin-left: auto; background: #33415c; font-weight: 400; }
   #viewport { flex: 1; position: relative; }
   #viewport canvas { display: block; }
+  body.clean #sidebar { display: none; }
+  #notfound {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #141922;
+    color: #dfe6f0;
+    font: 14px/1.4 system-ui, sans-serif;
+  }
+  #notfound[hidden] { display: none; }
+  #notfound h1 { font-size: 40px; margin: 0; color: #ff8f8f; }
+  #notfound code { background: #10151d; padding: 2px 6px; border-radius: 4px; }
 </style>
 <script type="importmap">
 {
@@ -122,6 +138,7 @@
     <div id="layer-panel" hidden>
       <h2>Layers</h2>
       <button id="add-group" type="button" class="small">+ Add group</button>
+      <button id="save-config" type="button" class="small">Save config (.json)</button>
       <p class="hint">First in the list is the bottom layer. Drag to orbit, scroll to zoom.</p>
       <ul id="layer-list"></ul>
     </div>

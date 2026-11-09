@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "name": "scene1",
+  "dimensions": { "widthMm": 120, "heightMm": 90, "thicknessMm": 2 },
+  "autoRotate": false,
+  "layers": {
+    "0": { "color": "#4e79a7" },
+    "1": { "color": "#f28e2b" },
+    "2": { "color": "#76b7b2", "engrave": true }
+  },
+  "stack": [
+    { "type": "layer", "index": 0 },
+    { "type": "group", "id": 1, "children": [1, 2] }
+  ]
+}

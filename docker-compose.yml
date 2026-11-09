@@ -1,0 +1,7 @@
+services:
+  viewer:
+    build: .
+    ports:
+      - "8000:80"
+    volumes:
+      - ./maps:/usr/share/nginx/html/data:ro

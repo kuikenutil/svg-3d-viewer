@@ -18,6 +18,7 @@ const layerList = document.getElementById('layer-list');
 const viewport = document.getElementById('viewport');
 
 let svgText = null;
+let svgBaseName = null;
 let renderer, scene, camera, controls, mapGroup = null;
 const layerEntries = [];
 const engraveSet = new Set();
@@ -71,7 +72,123 @@ function init() {
       handleDrop(JSON.parse(e.dataTransfer.getData('text/plain')), { kind: 'append' });
     } catch { /* ignore malformed drags */ }
   });
+  document.getElementById('save-config').addEventListener('click', onSaveConfig);
+  const route = location.pathname.match(/^\/file\/([^/]+)\/?$/);
+  if (route) {
+    let name = route[1];
+    try { name = decodeURIComponent(name); } catch { /* keep raw */ }
+    loadScene(name);
+  }
   animate();
+}
+
+async function loadScene(name) {
+  if (!name || name.includes('..')) return show404(name);
+  document.body.classList.add('clean');
+  onResize();
+  const base = `data/${encodeURIComponent(name)}`;
+  let svgResp, cfgResp;
+  try {
+    [svgResp, cfgResp] = await Promise.all([fetch(`${base}.svg`), fetch(`${base}.json`)]);
+  } catch {
+    return show404(name);
+  }
+  if (!svgResp.ok || !cfgResp.ok) return show404(name);
+  let cfg;
+  try {
+    cfg = await cfgResp.json();
+  } catch {
+    return show404(name);
+  }
+  try {
+    applyConfig(cfg, await svgResp.text());
+  } catch (err) {
+    console.error(err);
+    show404(name);
+  }
+}
+
+function show404(name) {
+  document.body.classList.add('clean');
+  let el = document.getElementById('notfound');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'notfound';
+    const h = document.createElement('h1');
+    h.textContent = '404';
+    const p = document.createElement('p');
+    p.append(`Scene “${name}” was not found. Expected `);
+    const c1 = document.createElement('code');
+    c1.textContent = `data/${name}.svg`;
+    const c2 = document.createElement('code');
+    c2.textContent = `data/${name}.json`;
+    p.append(c1, ' and ', c2, '.');
+    el.append(h, p);
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+  onResize();
+}
+
+function buildConfig() {
+  const layers = {};
+  for (const [i, color] of layerColors) layers[i] = { ...(layers[i] || {}), color };
+  for (const i of engraveSet) layers[i] = { ...(layers[i] || {}), engrave: true };
+  return {
+    version: 2,
+    name: svgBaseName || 'scene',
+    dimensions: {
+      widthMm: parseFloat(widthInput.value),
+      heightMm: parseFloat(heightInput.value),
+      thicknessMm: parseFloat(thicknessInput.value)
+    },
+    autoRotate: autoRotateInput.checked,
+    layers,
+    stack: stackItems
+      ? stackItems.map(it => it.type === 'group'
+          ? { type: 'group', id: it.id, children: [...it.children] }
+          : { type: 'layer', index: it.index })
+      : []
+  };
+}
+
+function applyConfig(cfg, text) {
+  if (!cfg || cfg.version !== 2 || !cfg.dimensions) throw new Error('unsupported config file');
+  const { widthMm, heightMm, thicknessMm } = cfg.dimensions;
+  if (!(widthMm > 0) || !(heightMm > 0) || !(thicknessMm > 0)) throw new Error('invalid dimensions in config');
+  svgText = text;
+  svgBaseName = typeof cfg.name === 'string' && cfg.name ? cfg.name : 'scene';
+  widthInput.value = widthMm;
+  heightInput.value = heightMm;
+  thicknessInput.value = thicknessMm;
+  autoRotateInput.checked = !!cfg.autoRotate;
+  engraveSet.clear();
+  layerColors.clear();
+  if (cfg.layers) {
+    for (const [k, v] of Object.entries(cfg.layers)) {
+      const i = Number(k);
+      if (!Number.isInteger(i) || i < 0 || !v) continue;
+      if (v.engrave) engraveSet.add(i);
+      if (typeof v.color === 'string') layerColors.set(i, v.color);
+    }
+  }
+  if (Array.isArray(cfg.stack) && cfg.stack.length > 0) {
+    stackItems = cfg.stack;
+    nextGroupId = cfg.stack.reduce((m, it) => (it.type === 'group' ? Math.max(m, it.id + 1) : m), 1);
+  }
+  buildMap(svgText, widthMm, heightMm, thicknessMm);
+}
+
+function onSaveConfig() {
+  if (!stackItems) return;
+  const cfg = buildConfig();
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${cfg.name}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus(`Saved ${a.download} — place it next to ${cfg.name}.svg in the data volume.`);
 }
 
 function animate() {
@@ -96,6 +213,7 @@ function onFile() {
   const file = fileInput.files[0];
   if (!file) {
     svgText = null;
+    svgBaseName = null;
     renderBtn.disabled = true;
     setStatus('');
     return;
@@ -103,6 +221,7 @@ function onFile() {
   const reader = new FileReader();
   reader.onload = () => {
     svgText = String(reader.result);
+    svgBaseName = file.name.replace(/\.svg$/i, '') || 'scene';
     renderBtn.disabled = false;
     setStatus(`Loaded "${file.name}" — set dimensions and render.`);
   };
